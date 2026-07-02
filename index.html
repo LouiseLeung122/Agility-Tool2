@@ -108,6 +108,50 @@
       text-align: center;
     }
 
+    .direction-field { grid-column: 1 / -1; }
+
+    .direction-title {
+      margin-bottom: 12px;
+      color: var(--text);
+      font-size: 17px;
+      font-weight: 800;
+    }
+
+    .direction-options {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 9px;
+    }
+
+    .direction-option {
+      min-height: 50px;
+      margin: 0;
+      padding: 8px 5px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      border: 2px solid #52647e;
+      border-radius: 11px;
+      background: #08111f;
+      color: var(--text);
+      font-size: 16px;
+      cursor: pointer;
+    }
+
+    .direction-option:has(input:checked) {
+      border-color: var(--accent);
+      background: #203018;
+      color: var(--accent);
+    }
+
+    .direction-option input {
+      width: 20px;
+      height: 20px;
+      margin: 0;
+      accent-color: var(--accent);
+    }
+
     .stage {
       flex: 1;
       min-height: 350px;
@@ -232,6 +276,10 @@
       .direction { font-size: 74px; }
       .arrow { font-size: 86px; margin-top: 10px; }
     }
+
+    @media (max-width: 370px) {
+      .direction-options { grid-template-columns: repeat(2, 1fr); }
+    }
   </style>
 </head>
 <body>
@@ -250,6 +298,19 @@
         <label for="totalInput">播报次数</label>
         <input id="totalInput" type="number" min="1" max="999" step="1" value="20" inputmode="numeric">
       </div>
+      <fieldset class="field direction-field">
+        <legend class="direction-title">播报方向（可多选）</legend>
+        <div class="direction-options">
+          <label class="direction-option"><input type="checkbox" name="direction" value="左" checked>左</label>
+          <label class="direction-option"><input type="checkbox" name="direction" value="右" checked>右</label>
+          <label class="direction-option"><input type="checkbox" name="direction" value="前" checked>前</label>
+          <label class="direction-option"><input type="checkbox" name="direction" value="后" checked>后</label>
+          <label class="direction-option"><input type="checkbox" name="direction" value="左前">左前</label>
+          <label class="direction-option"><input type="checkbox" name="direction" value="右前">右前</label>
+          <label class="direction-option"><input type="checkbox" name="direction" value="左后">左后</label>
+          <label class="direction-option"><input type="checkbox" name="direction" value="右后">右后</label>
+        </div>
+      </fieldset>
     </section>
 
     <section id="stage" class="stage" aria-live="polite">
@@ -290,7 +351,11 @@
         { name: '左', arrow: '←' },
         { name: '右', arrow: '→' },
         { name: '前', arrow: '↑' },
-        { name: '后', arrow: '↓' }
+        { name: '后', arrow: '↓' },
+        { name: '左前', arrow: '↖' },
+        { name: '右前', arrow: '↗' },
+        { name: '左后', arrow: '↙' },
+        { name: '右后', arrow: '↘' }
       ];
 
       const elements = {
@@ -311,6 +376,7 @@
 
       const installButton = document.querySelector('#installButton');
       const soundTestButton = document.querySelector('#soundTestButton');
+      const directionInputs = Array.from(document.querySelectorAll('input[name="direction"]'));
       let deferredInstallPrompt = null;
       let audioContext = null;
       let activeUtterance = null;
@@ -326,7 +392,8 @@
         deadline: 0,
         remainingMs: PREP_SECONDS * 1000,
         frameId: null,
-        lastDirectionIndex: -1
+        lastDirectionIndex: -1,
+        directionPool: DIRECTIONS.slice(0, 4)
       };
 
       function clamp(value, min, max) {
@@ -340,6 +407,11 @@
         elements.total.value = String(total);
         state.intervalMs = seconds * 1000;
         state.total = total;
+        const enabledNames = new Set(
+          directionInputs.filter((input) => input.checked).map((input) => input.value)
+        );
+        state.directionPool = DIRECTIONS.filter((direction) => enabledNames.has(direction.name));
+        return state.directionPool.length > 0;
       }
 
       function loadChineseVoice() {
@@ -409,6 +481,7 @@
       function setControls(running) {
         elements.interval.disabled = running;
         elements.total.disabled = running;
+        directionInputs.forEach((input) => { input.disabled = running; });
         elements.start.disabled = running;
         elements.pause.disabled = !running;
         elements.stop.disabled = !running;
@@ -498,12 +571,12 @@
 
         let index;
         do {
-          index = Math.floor(Math.random() * DIRECTIONS.length);
-        } while (DIRECTIONS.length > 1 && index === state.lastDirectionIndex);
+          index = Math.floor(Math.random() * state.directionPool.length);
+        } while (state.directionPool.length > 1 && index === state.lastDirectionIndex);
 
         state.lastDirectionIndex = index;
         state.count += 1;
-        const cue = DIRECTIONS[index];
+        const cue = state.directionPool[index];
         elements.direction.textContent = cue.name;
         elements.arrow.textContent = cue.arrow;
         speak(cue.name);
@@ -525,7 +598,10 @@
       }
 
       function startTraining() {
-        readSettings();
+        if (!readSettings()) {
+          alert('请至少选择一个播报方向。');
+          return;
+        }
         stopSpeech();
         // 必须在用户点击事件内激活音频；iOS Safari 会拦截延迟后的首次发声。
         unlockAudio();
@@ -565,6 +641,7 @@
         if (useDefaults) {
           elements.interval.value = '2';
           elements.total.value = '20';
+          directionInputs.forEach((input, index) => { input.checked = index < 4; });
         }
         readSettings();
         state.phase = 'idle';
